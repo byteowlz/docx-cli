@@ -734,7 +734,8 @@ fn mini_font(tables: &[([u8; 4], Vec<u8>)]) -> Vec<u8> {
     font
 }
 
-/// The platform's font folders (the system's and the user's), scanned by [`FontDb::global`].
+/// The platform's font folders (the system's and the user's), plus runtime
+/// `WORDCRAFT_FONT_DIR` directories (a platform path list), scanned by [`FontDb::global`].
 /// Empty on wasm.
 pub fn system_font_dirs() -> Vec<std::path::PathBuf> {
     let mut dirs: Vec<std::path::PathBuf> = Vec::new();
@@ -770,7 +771,13 @@ pub fn system_font_dirs() -> Vec<std::path::PathBuf> {
             dirs.push(h.join(".local/share/fonts"));
         }
     }
+    dirs.extend(extra_font_dirs(std::env::var_os("WORDCRAFT_FONT_DIR").as_deref()));
     dirs
+}
+
+/// Parse optional runtime font folders without treating empty entries as the working directory.
+fn extra_font_dirs(paths: Option<&std::ffi::OsStr>) -> Vec<std::path::PathBuf> {
+    paths.into_iter().flat_map(std::env::split_paths).filter(|p| !p.as_os_str().is_empty()).collect()
 }
 
 /// One face found in a font file.

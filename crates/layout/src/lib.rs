@@ -12,6 +12,7 @@ pub mod balloons;
 mod contour;
 pub mod display;
 pub mod fields;
+mod frames;
 pub mod hit;
 pub mod kinsoku;
 pub mod math;
@@ -3055,6 +3056,9 @@ fn para_notes(doc: &Document, p: &Paragraph, pl: &ParaLayout) -> Vec<(usize, u32
 /// continuous section takes no room (Word for Windows: the text after it follows right on, and
 /// columns balanced above it don't count it).
 fn place_para(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block: usize, body_top: f32) {
+    if frames::place(ctx, pb, p, block, body_top) {
+        return;
+    }
     if !pb.web && ctx.quiet_marks.binary_search(&block).is_ok() {
         // Its (empty) line stays where the text ended, even at the bottom of a full column.
         let (y, prev, bottom, content_bottom, at) = (pb.y, pb.prev.clone(), pb.bottom, pb.content_bottom, (pb.pages.len(), pb.col));
@@ -4229,6 +4233,8 @@ mod tests_autospace;
 mod tests_bidi;
 #[cfg(test)]
 mod tests_complex;
+#[cfg(test)]
+mod tests_frames;
 #[cfg(test)]
 mod tests_grid;
 #[cfg(test)]

@@ -74,6 +74,35 @@ fn has(list: &[String], family: &str) -> bool {
 }
 
 #[test]
+fn runtime_font_path_list_loads_fonts_from_both_directories() {
+    let first = font_dir("runtime first");
+    let second = font_dir("runtime second-é");
+    // Neither directory alone provides both styles. Use join_paths so the fixture also works
+    // with Windows' semicolon separator; no process environment mutation is needed.
+    std::fs::remove_file(first.join("Sub/Sysfont-Bold.TTF")).unwrap();
+    std::fs::remove_file(second.join("Sysfont-Regular.ttf")).unwrap();
+    let paths = std::env::join_paths([&first, &second]).unwrap();
+    let dirs = extra_font_dirs(Some(&paths));
+    assert_eq!(dirs, [first.clone(), second.clone()]);
+    let db = FontDb::with_font_dirs(dirs);
+    assert_eq!(db.load_system_fonts(), 2);
+    let regular = db.face(FAMILY, "Regular");
+    let bold = db.face(FAMILY, "Bold");
+    assert_eq!((regular.family.as_str(), regular.style.as_str()), (FAMILY, "Regular"));
+    assert_eq!((bold.family.as_str(), bold.style.as_str()), (FAMILY, "Bold"));
+    std::fs::remove_dir_all(first).unwrap();
+    std::fs::remove_dir_all(second).unwrap();
+}
+
+#[test]
+fn runtime_font_path_list_ignores_missing_and_empty_entries() {
+    assert!(extra_font_dirs(None).is_empty());
+    assert!(extra_font_dirs(Some(std::ffi::OsStr::new(""))).is_empty());
+    let paths = std::env::join_paths(["", "first font directory", "", "second font directory", ""]).unwrap();
+    assert_eq!(extra_font_dirs(Some(&paths)), [PathBuf::from("first font directory"), PathBuf::from("second font directory")]);
+}
+
+#[test]
 fn every_lookup_by_name_finds_installed_fonts_in_a_fresh_database() {
     let dir = font_dir("fresh");
     // Each lookup is the first thing a new database is asked. A folder listed twice is read once.

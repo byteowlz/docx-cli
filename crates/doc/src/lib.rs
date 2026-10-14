@@ -721,11 +721,12 @@ pub struct Document {
     /// The document's own endnote separators and continuation notice.
     #[serde(skip_serializing_if = "NoteSeparators::is_empty")]
     pub endnote_separators: NoteSeparators,
-    /// Embedded media (images) by key.
-    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    /// Embedded media (images) by key. Native JSON stores bytes as arrays in key order.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub media: BTreeMap<String, Arc<Vec<u8>>>,
     /// Source-format parts we keep verbatim for round-trip (e.g. custom XML), by part name.
-    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    /// Native JSON includes these opaque bytes; they may contain private source data.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub passthrough: BTreeMap<String, Arc<Vec<u8>>>,
     /// The document's own building blocks (its glossary document), in file order.
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -1547,3 +1548,5 @@ fn story_word_count_of(bl: &Blocks, numbering: &Numbering, styles: &styles::Styl
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_json;
