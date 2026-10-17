@@ -97,7 +97,7 @@ pub fn specs() -> Vec<CommandSpec> {
             .params(r#"{"path": string, "page"?: n (1-based), "scale"?: px per pt, "markup"?: bool (the page with its comments in balloons beside it; default file.printMarkup)}"#)
             .pure(),
         CommandSpec::new("file.pageGeometry", "Page Geometry", "File › Export", page_geometry)
-            .params(r#"{} → printed page sizes and the page rectangles of each content control and paragraph"#)
+            .params(r#"{"markup"?: bool (the layout of a PDF exported with Print Markup; default file.printMarkup)} → printed page sizes and the page rectangles of each content control, paragraph and tracked change"#)
             .pure(),
         // A print setting, like Word's: not part of the document, so no undo step.
         CommandSpec::new("file.printMarkup", "Print Markup", "File › Print", |s, v| {
@@ -366,10 +366,15 @@ fn rects_json(l: &wordcraft_layout::DocLayout, doc: &Document, a: &wordcraft_doc
 }
 
 /// The printed layout's page sizes and the page rectangles (points, origin top left) of each
-/// content control's content and each paragraph. It is the layout `file.exportPdf` prints, so a
+/// content control's content, each paragraph and each tracked change (as `review.changes` lists
+/// them). It is the layout `file.exportPdf` prints, so a
 /// host can place controls over that PDF's pages.
-fn page_geometry(s: &mut Session, _: &Value) -> CmdResult {
-    let l = s.export_layout_with(false);
+fn page_geometry(s: &mut Session, v: &Value) -> CmdResult {
+    // The layout the PDF export builds for the same options (wordcraft_pdf::export): without
+    // markup the final text with deletions hidden, with it the redline and comment balloons.
+    let o = export_options(s, v);
+    let lo = wordcraft_layout::LayoutOptions { hide_deleted: !o.markup, comment_balloons: o.comments, ..Default::default() };
+    let l = wordcraft_layout::layout(&s.doc, &mut wordcraft_layout::LayoutCache::new(), &lo);
     let pages: Vec<Value> =
         l.pages.iter().enumerate().map(|(i, pg)| json!({"page": i + 1, "number": pg.number, "w": pg.w - pg.markup, "h": pg.h})).collect();
     let stories: Vec<StoryRef> = std::iter::once(StoryRef::Body).chain(s.doc.parts.keys().map(|id| StoryRef::Part(*id))).collect();
@@ -390,7 +395,23 @@ fn page_geometry(s: &mut Session, _: &Value) -> CmdResult {
         let b = wordcraft_doc::Pos::new(story, path.clone(), p.text.len());
         paragraphs.push(json!({"story": story, "path": path, "rects": rects_json(&l, &s.doc, &a, &b)}));
     }
-    Ok(json!({"pages": pages, "controls": controls, "paragraphs": paragraphs}))
+    // Tracked changes in Reviewing Pane order, each with where it prints (a paragraph break: none).
+    let mut revisions = Vec::new();
+    if let Value::Array(list) = s.run("review.changes", &json!({}))? {
+        for (i, mut c) in list.into_iter().enumerate() {
+            let at = |k: &str| serde_json::from_value::<wordcraft_doc::Pos>(c[k].clone()).ok();
+            let rects = match (at("start"), at("end")) {
+                (Some(a), Some(b)) => rects_json(&l, &s.doc, &a, &b),
+                _ => Vec::new(),
+            };
+            if let Some(o) = c.as_object_mut() {
+                o.insert("index".into(), json!(i));
+                o.insert("rects".into(), json!(rects));
+            }
+            revisions.push(c);
+        }
+    }
+    Ok(json!({"pages": pages, "controls": controls, "paragraphs": paragraphs, "revisions": revisions}))
 }
 
 fn properties(s: &mut Session, v: &Value) -> CmdResult {

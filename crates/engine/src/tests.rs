@@ -8106,3 +8106,22 @@ fn page_geometry_places_controls_and_paragraphs_on_the_printed_page() {
     assert_eq!(g["paragraphs"].as_array().map(Vec::len), Some(2));
     assert!(g["paragraphs"][1]["rects"][0]["y"].as_f64() > label["y"].as_f64());
 }
+
+#[test]
+fn page_geometry_places_tracked_changes() {
+    let mut s = Session::new(wordcraft_doc::Document::from_text("Die Haftung ist auf 1.000.000 EUR begrenzt.\nFester Text."));
+    run(&mut s, "review.compare", json!({"text": "Die Haftung ist auf 250.000 EUR begrenzt.\nFester Text."}));
+    let g = run(&mut s, "file.pageGeometry", json!({"markup": true}));
+    let kinds: Vec<(&str, &str)> =
+        g["revisions"].as_array().unwrap().iter().map(|r| (r["kind"].as_str().unwrap_or(""), r["text"].as_str().unwrap_or(""))).collect();
+    assert_eq!(kinds, [("delete", "1.000.000 "), ("insert", "250.000 ")]);
+    let (del, ins) = (&g["revisions"][0]["rects"][0], &g["revisions"][1]["rects"][0]);
+    // Same line, the insertion right after the deletion, both inside the first paragraph.
+    assert_eq!((del["page"].as_u64(), del["y"].as_f64()), (Some(1), ins["y"].as_f64()));
+    assert!(ins["x"].as_f64().unwrap_or(0.0) >= del["x"].as_f64().unwrap_or(0.0) + del["w"].as_f64().unwrap_or(0.0) - 0.5);
+    assert_eq!(g["revisions"][1]["index"], 1);
+    // The final-text layout (a PDF without markup) prints no deleted text.
+    let plain = run(&mut s, "file.pageGeometry", json!({"markup": false}));
+    assert_eq!(plain["revisions"][0]["rects"], json!([]));
+    assert_eq!(plain["revisions"][1]["rects"].as_array().map(Vec::len), Some(1));
+}

@@ -27,8 +27,9 @@ USAGE:
   wordcraft-cli text <file>                   plain text
   wordcraft-cli inspect <file>                document structure (JSON)
   wordcraft-cli render <file> <out.png> [--page N] [--scale S]
-  wordcraft-cli geometry <file>               printed page sizes and the page rectangles of content
-                                              controls and paragraphs (JSON, points)
+  wordcraft-cli geometry <file> [--markup]    printed page sizes and the page rectangles of content
+                                              controls, paragraphs and tracked changes (JSON, points),
+                                              for the PDF `convert` writes with the same --markup
   wordcraft-cli run [--file F | --template T] --cmd 'id={json}' [--cmd …] [--save OUT] [--print]
                     [--author NAME]           run commands headlessly, then save (--author names
                                               who tracked changes and comments are by)
@@ -359,9 +360,9 @@ fn run<S: AsRef<OsStr>>(args: &[S]) -> Result<(), Failure> {
             write_stdout(|o| writeln!(o, "{tree}"))
         }
         "geometry" => {
-            validate_options("geometry", &rest, &[])?;
+            validate_options("geometry", &rest, &[OptionSpec { name: "--markup", takes_value: false }])?;
             let mut s = open(&pos(0)?)?;
-            let r = s.run("file.pageGeometry", &json!({})).map_err(|e| e.to_string())?;
+            let r = s.run("file.pageGeometry", &json!({"markup": rest.iter().any(|a| a == "--markup")})).map_err(|e| e.to_string())?;
             write_stdout(|o| writeln!(o, "{r}"))
         }
         "render" => {
