@@ -3,6 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use std::collections::HashMap;
 use std::sync::Arc;
 use wordcraft_doc::para::InlineObject;
 use wordcraft_doc::props::{CharProps, NumRef};
@@ -1234,8 +1235,12 @@ fn compare(s: &mut Session, v: &Value) -> CmdResult {
                 let run = ops.get(k..).unwrap_or_default().iter().take_while(|o| **o != Op::Same).count();
                 let dels = ops.get(k..k + run).unwrap_or_default().iter().filter(|o| **o == Op::Del).count();
                 let inss = run - dels;
-                for x in 0..dels.max(inss) {
-                    let (a, b) = (if x < dels { old.get(i + x) } else { None }, if x < inss { new.get(j + x) } else { None });
+                // Pair each revised paragraph with the old one it rewrites, by word overlap and in
+                // order; the rest were deleted or inserted whole (not their positional neighbours).
+                let olds: Vec<String> = old.get(i..i + dels).unwrap_or_default().iter().map(key).collect();
+                let news: Vec<String> = new.get(j..j + inss).unwrap_or_default().iter().map(key).collect();
+                for (x, y) in pair_changed(&olds, &news) {
+                    let (a, b) = (x.and_then(|x| old.get(i + x)), y.and_then(|y| new.get(j + y)));
                     match (a.map(|x| &**x), b.map(|x| &**x)) {
                         (Some(Block::Para(pa)), Some(Block::Para(pb))) => out.push(para_block(word_diff(pa, pb, ins, del, &opts))),
                         _ => {
@@ -1267,6 +1272,81 @@ fn compare(s: &mut Session, v: &Value) -> CmdResult {
     Ok(json!({"changes": changes, "author": author, "notHonoured": not_honoured}))
 }
 
+/// Words two paragraphs share (as a multiset), relative to their length: 0 (nothing) to 1 (same words).
+fn word_similarity(a: &str, b: &str) -> f32 {
+    let (a, b): (Vec<&str>, Vec<&str>) = (a.split_whitespace().collect(), b.split_whitespace().collect());
+    if a.is_empty() && b.is_empty() {
+        return 1.0;
+    }
+    let mut counts: HashMap<&str, i32> = HashMap::new();
+    for w in &a {
+        *counts.entry(w).or_default() += 1;
+    }
+    let mut common = 0;
+    for w in &b {
+        if let Some(c) = counts.get_mut(w).filter(|c| **c > 0) {
+            *c -= 1;
+            common += 1;
+        }
+    }
+    2.0 * common as f32 / (a.len() + b.len()) as f32
+}
+
+/// Least word overlap at which a changed paragraph counts as a rewrite of an old one.
+const PAIR_SIMILARITY: f32 = 0.5;
+/// Largest block of changed paragraphs aligned by similarity; larger ones pair in order.
+const MAX_PAIRING: usize = 250_000;
+
+/// An order-preserving alignment of deleted (`old`) and inserted (`new`) paragraphs that maximizes
+/// the total similarity of the pairs: `(Some, Some)` is a rewrite, `(Some, None)` a deletion,
+/// `(None, Some)` an insertion. Within each gap, deletions come before insertions.
+fn pair_changed(old: &[String], new: &[String]) -> Vec<(Option<usize>, Option<usize>)> {
+    let (n, m) = (old.len(), new.len());
+    // One paragraph replaced in place is a rewrite however different, as before.
+    if n == 1 && m == 1 {
+        return vec![(Some(0), Some(0))];
+    }
+    if n * m > MAX_PAIRING {
+        return (0..n.max(m)).map(|x| ((x < n).then_some(x), (x < m).then_some(x))).collect();
+    }
+    let sim: Vec<Vec<f32>> = old.iter().map(|a| new.iter().map(|b| word_similarity(a, b)).collect()).collect();
+    let at = |t: &Vec<Vec<f32>>, i: usize, j: usize| t.get(i).and_then(|r| r.get(j)).copied().unwrap_or(0.0);
+    let mut t = vec![vec![0.0f32; m + 1]; n + 1];
+    for i in (0..n).rev() {
+        for j in (0..m).rev() {
+            let s = at(&sim, i, j);
+            let pair = if s >= PAIR_SIMILARITY { at(&t, i + 1, j + 1) + s } else { f32::MIN };
+            let v = pair.max(at(&t, i + 1, j)).max(at(&t, i, j + 1));
+            if let Some(cell) = t.get_mut(i).and_then(|r| r.get_mut(j)) {
+                *cell = v;
+            }
+        }
+    }
+    let (mut out, mut dels, mut inss) = (Vec::new(), Vec::new(), Vec::new());
+    let flush = |out: &mut Vec<(Option<usize>, Option<usize>)>, dels: &mut Vec<usize>, inss: &mut Vec<usize>| {
+        out.extend(dels.drain(..).map(|d| (Some(d), None)));
+        out.extend(inss.drain(..).map(|x| (None, Some(x))));
+    };
+    let (mut i, mut j) = (0, 0);
+    while i < n || j < m {
+        let s = at(&sim, i, j);
+        if i < n && j < m && s >= PAIR_SIMILARITY && (at(&t, i, j) - (at(&t, i + 1, j + 1) + s)).abs() < 1e-4 {
+            flush(&mut out, &mut dels, &mut inss);
+            out.push((Some(i), Some(j)));
+            i += 1;
+            j += 1;
+        } else if i < n && (j == m || (at(&t, i, j) - at(&t, i + 1, j)).abs() < 1e-4) {
+            dels.push(i);
+            i += 1;
+        } else {
+            inss.push(j);
+            j += 1;
+        }
+    }
+    flush(&mut out, &mut dels, &mut inss);
+    out
+}
+
 /// A block's text (a table's cells in order), for matching blocks.
 fn block_text(b: &Block, depth: usize) -> String {
     match b {
@@ -1285,6 +1365,11 @@ fn mark_block(b: &Block, f: &dyn Fn(&mut CharProps), depth: usize) -> Block {
             let mut p = p.clone();
             let len = p.len();
             let _ = p.format(0, len, f);
+            // A whole story paragraph inserted or deleted takes its break along, so accepting a
+            // deletion removes the paragraph instead of leaving it empty. A table cell keeps its own.
+            if depth == 0 {
+                f(&mut p.mark);
+            }
             Block::Para(p)
         }
         Block::Table(t) => {
@@ -1963,6 +2048,44 @@ mod tests {
         assert!(r["changes"].as_u64().unwrap() >= 2);
         s.run("review.acceptAll", &json!({})).unwrap();
         assert_eq!(s.doc.plain_text(StoryRef::Body), "The dog sat.\nKeep this.\nNew line here.");
+    }
+
+    #[test]
+    fn compare_pairs_rewritten_paragraphs_by_content_not_position() {
+        // A paragraph removed in front of a rewritten one must not be diffed against it.
+        let original = "Name: Mara Winter\nDie Vollmacht erlischt mit Abschluss des Mandats.\nDie Haftung ist auf 1.000.000 EUR je Schadensfall begrenzt.\nUnterschrift: Mara Winter";
+        let revised = "Name: Mara Winter-Berg\nDie Haftung ist auf 250.000 EUR je Schadensfall begrenzt.\nUntervollmacht darf erteilt werden.\nUnterschrift: Mara Winter-Berg";
+        let mut s = Session::new(Document::from_text(original));
+        s.run("review.compare", &json!({"text": revised})).unwrap();
+        let marked = |b: &Arc<Block>, del: bool| {
+            let p = b.as_para().unwrap();
+            p.run_ranges()
+                .filter(|(_, c)| if del { c.del.is_some() } else { c.ins.is_some() })
+                .map(|(r, _)| p.text[r].to_string())
+                .collect::<String>()
+        };
+        let body = &s.doc.body;
+        let rows: Vec<(String, String)> = body.iter().map(|b| (marked(b, true), marked(b, false))).collect();
+        assert_eq!(
+            rows,
+            vec![
+                ("Winter".into(), "Winter-Berg".into()),
+                ("Die Vollmacht erlischt mit Abschluss des Mandats.".into(), String::new()),
+                ("1.000.000 ".into(), "250.000 ".into()),
+                (String::new(), "Untervollmacht darf erteilt werden.".into()),
+                ("Winter".into(), "Winter-Berg".into()),
+            ]
+        );
+        s.run("review.acceptAll", &json!({})).unwrap();
+        assert_eq!(s.doc.plain_text(StoryRef::Body), revised);
+    }
+
+    #[test]
+    fn pairing_keeps_order_and_puts_deletions_first() {
+        let v = |x: &[&str]| x.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        // "a b d" rewrites "a b c"; "q r s" is new and stays in its place, "x y z" was removed.
+        assert_eq!(pair_changed(&v(&["a b c", "x y z"]), &v(&["q r s", "a b d"])), vec![(None, Some(0)), (Some(0), Some(1)), (Some(1), None)]);
+        assert_eq!(pair_changed(&v(&["one", "two"]), &v(&["three"])), vec![(Some(0), None), (Some(1), None), (None, Some(0))]);
     }
 
     #[test]
