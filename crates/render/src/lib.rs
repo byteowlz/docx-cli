@@ -261,7 +261,7 @@ impl Vector {
             .iter()
             .map(|it| match it {
                 Item::Path { segs, .. } => segs.len() * std::mem::size_of::<Seg>(),
-                Item::Bitmap { .. } => 0,
+                Item::Bitmap { .. } | Item::Text(_) => 0,
             })
             .sum();
         px + segs
@@ -288,11 +288,19 @@ fn vector_for(doc: &Document, key: &str) -> Option<Arc<Vector>> {
 }
 
 /// Parses a metafile and decodes its bitmaps. None when the picture has no usable size.
+/// A metafile text run outlined with [`wordcraft_fonts::word::text_outline`].
+fn metafile_glyphs(family: &str, bold: bool, italic: bool, text: &str) -> Option<wordcraft_metafile::GlyphRun> {
+    let o = wordcraft_fonts::word::text_outline(family, bold, italic, text);
+    Some(wordcraft_metafile::GlyphRun { path: o.path, advance: o.advance, ascent: o.ascent, descent: o.descent })
+}
+
 fn build_vector(bytes: &[u8]) -> Option<Vector> {
     let mut pic = wordcraft_metafile::parse(bytes).ok()?;
     if !pic.has_size() {
         return None;
     }
+    // Text records draw with the document's fonts (substituted like document text).
+    pic.outline_text(metafile_glyphs);
     // The pixels move into the pixmaps; the picture keeps only the geometry.
     let pixmaps = pic.items.iter_mut().map(|it| it.take_pixels().and_then(|(w, h, px)| premul_pixmap(w, h, &px)).map(Arc::new)).collect();
     Some(Vector { pic, pixmaps })

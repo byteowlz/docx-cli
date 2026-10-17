@@ -4,7 +4,7 @@
 
 use crate::dib::Rgba;
 use crate::geom::{Op, P};
-use crate::{MAX_BYTES, MAX_ITEMS, MAX_OBJECTS, MAX_PATH_OPS, MAX_STACK};
+use crate::{MAX_BYTES, MAX_FONTS, MAX_ITEMS, MAX_OBJECTS, MAX_PATH_OPS, MAX_STACK};
 
 pub(crate) const MM_TEXT: u32 = 1;
 const MM_ISOTROPIC: u32 = 7;
@@ -58,6 +58,8 @@ pub(crate) struct Brush {
 pub(crate) enum Obj {
     Pen(Pen),
     Brush(Brush),
+    /// A logical font: an index into [`Canvas::fonts`] (the descriptor holds a name, so it lives apart).
+    Font(usize),
     /// Fonts, palettes, pattern brushes and regions: they take a table slot but draw nothing.
     Other,
 }
@@ -164,10 +166,47 @@ fn ratio(num: f64, den: f64) -> f64 {
     if den == 0.0 { 1.0 } else { num / den }
 }
 
+/// A logical font (LOGFONTW): `height` in logical units (negative: the em; positive: the cell, em plus
+/// internal leading), `escapement` in tenths of a degree counterclockwise.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Font {
+    pub height: f64,
+    pub escapement: f64,
+    pub bold: bool,
+    pub italic: bool,
+    pub family: String,
+}
+
+/// TA_* text alignment: the horizontal part (TA_LEFT 0, TA_RIGHT 2, TA_CENTER 6) and the vertical
+/// (TA_TOP 0, TA_BOTTOM 8, TA_BASELINE 24).
+pub(crate) const TA_HORIZONTAL: u32 = 6;
+pub(crate) const TA_VERTICAL: u32 = 24;
+
 /// Output of drawing, in device units. Path points are already mapped; `lib.rs` normalises them.
 pub(crate) enum Raw {
-    Path { ops: Vec<Op>, fill: Option<[u8; 4]>, stroke: Option<([u8; 4], f64)>, even_odd: bool },
-    Bitmap { rect: [f64; 4], img: Rgba },
+    Path {
+        ops: Vec<Op>,
+        fill: Option<[u8; 4]>,
+        stroke: Option<([u8; 4], f64)>,
+        even_odd: bool,
+    },
+    Bitmap {
+        rect: [f64; 4],
+        img: Rgba,
+    },
+    /// A text record: the reference point, the font size (`cell` when it is a cell height), the
+    /// baseline angle (radians, counterclockwise), and per-character advances when the file gives them.
+    Text {
+        at: P,
+        size: f64,
+        cell: bool,
+        angle: f64,
+        color: [u8; 4],
+        font: Font,
+        align: u32,
+        text: String,
+        dx: Option<Vec<f64>>,
+    },
 }
 
 #[derive(Clone)]
@@ -177,6 +216,9 @@ struct Saved {
     brush: Brush,
     even_odd: bool,
     nop: bool,
+    font: Option<usize>,
+    text_align: u32,
+    text_color: [u8; 4],
 }
 
 pub(crate) struct Canvas {
@@ -205,6 +247,10 @@ pub(crate) struct Canvas {
     in_path: bool,
     path: Vec<Op>,
     full: bool,
+    fonts: Vec<Font>,
+    font: Option<usize>,
+    text_align: u32,
+    text_color: [u8; 4],
 }
 
 impl Canvas {
@@ -228,6 +274,10 @@ impl Canvas {
             in_path: false,
             path: Vec::new(),
             full: false,
+            fonts: Vec::new(),
+            font: None,
+            text_align: 0,
+            text_color: [0, 0, 0, 255],
         }
     }
 
@@ -240,6 +290,7 @@ impl Canvas {
         let cost = match &raw {
             Raw::Path { ops, .. } => ops.len() * std::mem::size_of::<Op>(),
             Raw::Bitmap { img, .. } => img.px.len(),
+            Raw::Text { text, dx, .. } => text.len() + dx.as_ref().map_or(0, |d| d.len() * 8),
         };
         if self.items.len() >= MAX_ITEMS || self.used.saturating_add(cost) > MAX_BYTES {
             self.full = true;
@@ -318,7 +369,16 @@ impl Canvas {
     /// could no longer match the file.
     pub fn save_dc(&mut self) {
         if self.saved.len() < MAX_STACK {
-            self.saved.push(Saved { map: self.map, pen: self.pen, brush: self.brush, even_odd: self.even_odd, nop: self.nop });
+            self.saved.push(Saved {
+                map: self.map,
+                pen: self.pen,
+                brush: self.brush,
+                even_odd: self.even_odd,
+                nop: self.nop,
+                font: self.font,
+                text_align: self.text_align,
+                text_color: self.text_color,
+            });
         } else {
             self.full = true;
         }
@@ -335,6 +395,48 @@ impl Canvas {
         self.brush = s.brush;
         self.even_odd = s.even_odd;
         self.nop = s.nop;
+        self.font = s.font;
+        self.text_align = s.text_align;
+        self.text_color = s.text_color;
+    }
+
+    /// EXTCREATEFONTINDIRECTW: a font in object slot `slot`. Past [`MAX_FONTS`] fonts are not kept.
+    pub fn create_font(&mut self, slot: usize, font: Font) {
+        if self.fonts.len() >= MAX_FONTS {
+            return;
+        }
+        self.fonts.push(font);
+        self.add_object(Some(slot), Obj::Font(self.fonts.len() - 1));
+    }
+    pub fn set_text_align(&mut self, a: u32) {
+        self.text_align = a;
+    }
+    pub fn set_text_color(&mut self, c: [u8; 4]) {
+        self.text_color = c;
+    }
+    /// EXTTEXTOUTW at logical point `at`, with optional logical advances. Nothing without a font.
+    pub fn text(&mut self, at: P, text: String, dx: Option<Vec<f64>>) {
+        let Some(font) = self.font.and_then(|i| self.fonts.get(i)).cloned() else { return };
+        if text.trim().is_empty() || self.nop {
+            return;
+        }
+        let scale = self.map.scale();
+        let size = font.height.abs() * scale;
+        if !(size.is_finite() && size > 0.0) {
+            return;
+        }
+        let raw = Raw::Text {
+            at: self.map.device(at),
+            size,
+            cell: font.height > 0.0,
+            angle: (font.escapement / 10.0).to_radians(),
+            color: self.text_color,
+            align: self.text_align,
+            dx: dx.map(|d| d.into_iter().map(|v| v * scale).collect()),
+            text,
+            font,
+        };
+        self.push(raw);
     }
 
     /// Stores an object in `slot` (EMF index), or in the lowest free slot (WMF handle table).
@@ -384,6 +486,7 @@ impl Canvas {
         match self.objects.get(i as usize).copied().flatten() {
             Some(Obj::Pen(p)) => self.pen = p,
             Some(Obj::Brush(b)) => self.brush = b,
+            Some(Obj::Font(f)) => self.font = Some(f),
             Some(Obj::Other) | None => {}
         }
     }

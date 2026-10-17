@@ -2,7 +2,8 @@
 
 use crate::canvas::Canvas;
 use crate::dib::Rgba;
-use crate::{Error, Item, MAX_BYTES, MAX_ITEMS, Seg, is_metafile, parse};
+use crate::{Error, GlyphRun, Item, MAX_BYTES, MAX_ITEMS, Seg, TextItem, is_metafile, parse};
+use kurbo::BezPath;
 
 fn h16(v: i32) -> Vec<u8> {
     (v as i16).to_le_bytes().to_vec()
@@ -120,7 +121,7 @@ const DIB24_RGBA: [u8; 16] = [255, 0, 0, 255, 255, 255, 255, 255, 0, 0, 255, 255
 fn path_segs(item: &Item) -> (&Vec<Seg>, Option<[u8; 4]>, Option<([u8; 4], f32)>, bool) {
     match item {
         Item::Path { segs, fill, stroke, even_odd } => (segs, *fill, *stroke, *even_odd),
-        Item::Bitmap { .. } => panic!("expected a path"),
+        Item::Bitmap { .. } | Item::Text(_) => panic!("expected a path"),
     }
 }
 
@@ -1015,4 +1016,109 @@ fn plain_wmf_target_comes_from_a_window_that_was_read() {
     assert_eq!((p.width, p.height), (200.0, 100.0));
     let (x0, y0, x1, y1) = rect_extent(&p.items[0]);
     assert!(close(x0, 0.0) && close(y0, 0.0) && close(x1, 200.0) && close(y1, 100.0), "{x0} {y0} {x1} {y1}");
+}
+
+/// EMR_EXTCREATEFONTINDIRECTW payload: slot, then LOGFONTW (height, width, escapement, orientation,
+/// weight, italic/underline/strike/charset, four precision bytes, a 32-unit face name).
+fn font_rec(slot: u32, height: i32, escapement: i32, weight: i32, face: &str) -> Vec<u8> {
+    let mut name: Vec<u8> = face.encode_utf16().flat_map(u16::to_le_bytes).collect();
+    name.resize(64, 0);
+    erec(82, &cat(vec![h32(slot), e32(height), e32(0), e32(escapement), e32(0), e32(weight), vec![0; 8], name]))
+}
+
+/// EMR_EXTTEXTOUTW payload at (x, y) with per-character advances.
+fn text_rec(x: i32, y: i32, text: &str, dx: &[i32]) -> Vec<u8> {
+    let units: Vec<u8> = text.encode_utf16().flat_map(u16::to_le_bytes).collect();
+    let n = text.encode_utf16().count() as u32;
+    let (off_string, off_dx) = (76u32, 76 + units.len().next_multiple_of(4) as u32);
+    let mut string = units.clone();
+    string.resize(units.len().next_multiple_of(4), 0);
+    let header = cat(vec![
+        vec![0; 16],
+        h32(1),
+        1f32.to_le_bytes().to_vec(),
+        1f32.to_le_bytes().to_vec(),
+        e32(x),
+        e32(y),
+        h32(n),
+        h32(off_string),
+        h32(0),
+        vec![0; 16],
+        h32(off_dx),
+    ]);
+    erec(84, &cat(vec![header, string, dx.iter().flat_map(|v| v.to_le_bytes()).collect()]))
+}
+
+#[test]
+fn emf_text_records_become_text_items_and_outline_into_paths() {
+    let recs = [
+        erec(27, &cat(vec![e32(0), e32(0)])),
+        erec(54, &cat(vec![e32(100), e32(50)])),
+        font_rec(1, -10, 0, 700, "Arial"),
+        erec(37, &h32(1)),
+        erec(24, &h32(0x0000_00FF)),
+        erec(22, &h32(24)),
+        text_rec(20, 30, "Hi", &[6, 6]),
+    ];
+    let mut p = parse(&emf(&recs, [0; 4], [0; 4])).unwrap();
+    let Item::Text(t) = &p.items[1] else { panic!("text item: {:?}", p.items) };
+    assert_eq!(
+        t,
+        &TextItem {
+            x: 20.0,
+            y: 30.0,
+            size: 10.0,
+            cell: false,
+            angle: 0.0,
+            color: [255, 0, 0, 255],
+            family: "Arial".into(),
+            bold: true,
+            italic: false,
+            align: 24,
+            text: "Hi".into(),
+            advances: Some(vec![6.0, 6.0])
+        }
+    );
+    // A unit square per character, baseline at its bottom: each lands at its own advance.
+    let square = || {
+        let mut b = BezPath::new();
+        b.move_to((0.0, -1.0));
+        b.line_to((1.0, -1.0));
+        b.line_to((1.0, 0.0));
+        b.close_path();
+        GlyphRun { path: b, advance: 1.0, ascent: 0.8, descent: 0.2 }
+    };
+    p.outline_text(|family, bold, _, _| (family == "Arial" && bold).then(square));
+    let (segs, fill, stroke, _) = path_segs(&p.items[1]);
+    assert_eq!((fill, stroke), (Some([255, 0, 0, 255]), None));
+    let starts: Vec<(f32, f32)> = segs.iter().filter_map(|s| if let Seg::Move(x, y) = s { Some((*x, *y)) } else { None }).collect();
+    assert_eq!(starts, vec![(20.0, 20.0), (26.0, 20.0)]);
+    // Without a font nothing is drawn, and an outliner that gives nothing drops the text.
+    let mut q = parse(&emf(&recs, [0; 4], [0; 4])).unwrap();
+    q.outline_text(|_, _, _, _| None);
+    assert!(q.items.iter().all(|i| matches!(i, Item::Path { .. })) && q.items.len() == 1);
+}
+
+#[test]
+fn emf_text_alignment_centres_and_cell_heights_shrink_to_the_em() {
+    let recs = [
+        erec(27, &cat(vec![e32(0), e32(0)])),
+        erec(54, &cat(vec![e32(100), e32(50)])),
+        font_rec(1, 10, 0, 400, "Arial"),
+        erec(37, &h32(1)),
+        erec(22, &h32(6)),
+        text_rec(50, 10, "AB", &[]),
+    ];
+    let mut p = parse(&emf(&recs, [0; 4], [0; 4])).unwrap();
+    let run = || {
+        let mut b = BezPath::new();
+        b.move_to((0.0, 0.0));
+        b.line_to((2.0, 0.0));
+        GlyphRun { path: b, advance: 2.0, ascent: 0.8, descent: 0.2 }
+    };
+    p.outline_text(|_, _, _, _| Some(run()));
+    let (segs, ..) = path_segs(&p.items[1]);
+    // Cell height 10 over ascent + descent 1.0 is an em of 10: the run is 20 wide, centred on x = 50,
+    // and TA_TOP puts the baseline one ascent (8) below the reference point.
+    assert_eq!(segs, &vec![Seg::Move(40.0, 18.0), Seg::Line(60.0, 18.0)]);
 }

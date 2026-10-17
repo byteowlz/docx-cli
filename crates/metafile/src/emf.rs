@@ -2,7 +2,7 @@
 //! record (bitmap info and bits) are relative to the record start, so each handler reads the record slice.
 
 use crate::bytes::Bytes;
-use crate::canvas::{BS_NULL, Brush, Canvas, Obj, PS_NULL, PS_STYLE_MASK, Pen, Xform, colorref};
+use crate::canvas::{BS_NULL, Brush, Canvas, Font, Obj, PS_NULL, PS_STYLE_MASK, Pen, Xform, colorref};
 use crate::dib::{self, Blend};
 use crate::geom::{self, ArcKind, P};
 use crate::{Error, Frame, MAX_PATH_OPS};
@@ -162,6 +162,10 @@ fn record(cv: &mut Canvas, typ: u32, r: Bytes) {
         80 => set_dibits(cv, r),
         81 => stretch_dibits(cv, r),
         114 => alphablend(cv, r),
+        22 => r.u32(8).map(|a| cv.set_text_align(a)),
+        24 => r.u32(8).map(|c| cv.set_text_color(colorref(c))),
+        82 => create_font(cv, r),
+        84 => ext_text_out_w(cv, r),
         _ => Some(()),
     };
 }
@@ -310,5 +314,48 @@ fn blit(cv: &mut Canvas, r: Bytes, dst: [f64; 4], src: [f64; 4], at: (usize, usi
     let (mut img, dst) = dib::decode_clip(info, pixels, blend.per_pixel(), src.map(|v| v as i64), dst)?;
     dib::prepare(&mut img, blend);
     cv.bitmap(dst, img);
+    Some(())
+}
+
+/// EMR_EXTCREATEFONTINDIRECTW: the object slot, then a LOGFONTW (height, width, escapement,
+/// orientation, weight, italic, ..., the face name as 32 UTF-16 units at 28).
+fn create_font(cv: &mut Canvas, r: Bytes) -> Option<()> {
+    let slot = r.u32(8)? as usize;
+    let lf = 12;
+    let height = f64::from(r.i32(lf)?);
+    let escapement = f64::from(r.i32(lf + 8)?);
+    let weight = r.i32(lf + 16)?;
+    let italic = r.slice(lf + 20, 1).and_then(|b| b.first().copied())? != 0;
+    let name: Vec<u16> = (0..32).map_while(|i| r.u16(lf + 28 + i * 2)).take_while(|c| *c != 0).collect();
+    let family = String::from_utf16_lossy(&name);
+    cv.create_font(slot, Font { height, escapement, bold: weight >= 600, italic, family });
+    Some(())
+}
+
+/// ETO_PDY: the advance array holds an x and a y advance per character.
+const ETO_PDY: u32 = 0x2000;
+/// Characters kept from one text record.
+const MAX_TEXT_CHARS: usize = 16_384;
+
+/// EMR_EXTTEXTOUTW: bounds, graphics mode and scales, then an EMRTEXT: the reference point (36),
+/// the character count (44), the string offset (48), options (52), a clip rectangle and the advance
+/// offset (72). Offsets are from the record start.
+fn ext_text_out_w(cv: &mut Canvas, r: Bytes) -> Option<()> {
+    let at = xy32(r, 36)?;
+    let n = r.u32(44)? as usize;
+    if n == 0 || n > MAX_TEXT_CHARS {
+        return Some(());
+    }
+    let off = r.u32(48)? as usize;
+    let units: Vec<u16> = (0..n).map(|i| r.u16(off + i * 2)).collect::<Option<_>>()?;
+    let text = String::from_utf16_lossy(&units);
+    let options = r.u32(52)?;
+    let dx_off = r.u32(72)? as usize;
+    let step = if options & ETO_PDY != 0 { 8 } else { 4 };
+    // Advances are per UTF-16 unit; keep them only when every unit is one character.
+    let dx = (dx_off != 0 && text.chars().count() == n)
+        .then(|| (0..n).map(|i| r.i32(dx_off + i * step).map(f64::from)).collect::<Option<Vec<_>>>())
+        .flatten();
+    cv.text(at, text, dx);
     Some(())
 }

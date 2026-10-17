@@ -56,6 +56,8 @@ impl Picture {
                         out.push(PlacedItem::Path { path, fill: *fill, stroke, even_odd: *even_odd });
                     }
                 }
+                // Text is drawn once a font library has outlined it (`Picture::outline_text`).
+                Item::Text(_) => {}
                 Item::Bitmap { rect: [x, y, w, h], .. } => {
                     let (x0, y0) = (f64::from(*x), f64::from(*y));
                     let rect = tf.transform_rect_bbox(Rect::new(x0, y0, x0 + f64::from(*w), y0 + f64::from(*h)));

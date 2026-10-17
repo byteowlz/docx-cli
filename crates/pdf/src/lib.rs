@@ -1620,11 +1620,19 @@ struct Vector {
 }
 
 /// Parses a metafile and embeds its bitmaps. None when the picture has no usable size.
+/// A metafile text run outlined with [`wordcraft_fonts::word::text_outline`].
+fn metafile_glyphs(family: &str, bold: bool, italic: bool, text: &str) -> Option<wordcraft_metafile::GlyphRun> {
+    let o = wordcraft_fonts::word::text_outline(family, bold, italic, text);
+    Some(wordcraft_metafile::GlyphRun { path: o.path, advance: o.advance, ascent: o.ascent, descent: o.descent })
+}
+
 fn build_vector(bytes: &[u8]) -> Option<Vector> {
     let mut pic = wordcraft_metafile::parse(bytes).ok()?;
     if !pic.has_size() {
         return None;
     }
+    // Text records draw with the document's fonts (substituted like document text).
+    pic.outline_text(metafile_glyphs);
     let images = pic.items.iter_mut().map(|it| it.take_pixels().map(|(w, h, px)| Image::from_rgba8(px, w, h))).collect();
     Some(Vector { pic, images })
 }

@@ -598,3 +598,30 @@ mod tests {
         assert_ne!(bare, stacked, "the tone mark over ั is raised or swapped");
     }
 }
+
+/// A run of text as outlines in ems (1.0 = the font size), y down, origin at the start of the
+/// baseline, with its advance and the font's ascent and descent in ems. For text without a layout
+/// of its own, such as metafile text records.
+pub struct TextOutline {
+    pub path: crate::BezPath,
+    pub advance: f64,
+    pub ascent: f64,
+    pub descent: f64,
+}
+
+/// [`TextOutline`] of `text` in `family` (substituted like document text), synthetic italic slanted.
+pub fn text_outline(family: &str, bold: bool, italic: bool, text: &str) -> TextOutline {
+    let r = resolve(family, bold, italic);
+    let face = r.face.get();
+    let em = face.upem.max(1.0);
+    let db = FontDb::global();
+    let mut path = crate::BezPath::new();
+    let mut x = 0.0;
+    for g in crate::shape(face, text, &[], |c| c) {
+        let place = kurbo::Affine::scale(1.0 / em) * kurbo::Affine::translate((x + f64::from(g.x_offset), -f64::from(g.y_offset)));
+        let slant = if r.synth_italic { kurbo::Affine::skew(-0.2, 0.0) } else { kurbo::Affine::IDENTITY };
+        path.extend((slant * place * (*db.outline(face, g.gid)).clone()).elements().iter().copied());
+        x += f64::from(g.x_advance);
+    }
+    TextOutline { path, advance: x / em, ascent: face.ascent / em, descent: face.descent / em }
+}

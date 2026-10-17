@@ -23,6 +23,7 @@ mod tests;
 use bytes::Bytes;
 use canvas::Raw;
 use geom::{Op, P};
+use kurbo::{Affine, BezPath};
 pub use place::{MAX_BITMAP_SIDE, PlacedItem};
 
 /// Items kept from one file. Past the cap the parse stops and keeps what it has.
@@ -31,6 +32,8 @@ pub(crate) const MAX_ITEMS: usize = 200_000;
 pub(crate) const MAX_OBJECTS: usize = 4096;
 /// Largest bitmap in pixels (about 40 megapixels, 160 MB of RGBA).
 pub(crate) const MAX_PIXELS: usize = 40_000_000;
+/// Logical fonts kept from one file.
+pub(crate) const MAX_FONTS: usize = 4096;
 /// DC save-stack depth.
 pub(crate) const MAX_STACK: usize = 1024;
 /// Points in one open path bracket.
@@ -60,6 +63,117 @@ pub enum Item {
     },
     /// A bitmap stretched into `rect` = `[x, y, w, h]` (picture units), RGBA8 rows top-down.
     Bitmap { rect: [f32; 4], width: u32, height: u32, rgba: Vec<u8> },
+    /// Text drawn by the file. Renderers draw it after [`Picture::outline_text`] has turned it into a path.
+    Text(TextItem),
+}
+
+/// A metafile text record in picture units: the reference point, the size (`cell`: a cell height,
+/// em plus internal leading), the baseline angle (radians, counterclockwise on the page), the GDI
+/// alignment flags and, when the file gives them, the advance of each character.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TextItem {
+    pub x: f32,
+    pub y: f32,
+    pub size: f32,
+    pub cell: bool,
+    pub angle: f32,
+    pub color: [u8; 4],
+    pub family: String,
+    pub bold: bool,
+    pub italic: bool,
+    pub align: u32,
+    pub text: String,
+    pub advances: Option<Vec<f32>>,
+}
+
+/// Text as outlines in ems (1.0 = the font size), y down, origin at the start of the baseline, with
+/// its advance and the font's ascent and descent in ems: what a font library gives
+/// [`Picture::outline_text`].
+pub struct GlyphRun {
+    pub path: BezPath,
+    pub advance: f64,
+    pub ascent: f64,
+    pub descent: f64,
+}
+
+impl Picture {
+    /// Turns text items into filled paths with `outline(family, bold, italic, text)`, placing them by
+    /// their alignment, angle and advances. Text the outliner gives nothing for is dropped.
+    pub fn outline_text(&mut self, outline: impl Fn(&str, bool, bool, &str) -> Option<GlyphRun>) {
+        for item in &mut self.items {
+            let Item::Text(t) = item else { continue };
+            *item = text_path(t, &outline).unwrap_or(Item::Path { segs: Vec::new(), fill: None, stroke: None, even_odd: false });
+        }
+        self.items.retain(|it| !matches!(it, Item::Path { segs, .. } if segs.is_empty()));
+    }
+}
+
+fn text_path(t: &TextItem, outline: &impl Fn(&str, bool, bool, &str) -> Option<GlyphRun>) -> Option<Item> {
+    let size = f64::from(t.size);
+    let whole = outline(&t.family, t.bold, t.italic, &t.text)?;
+    // A cell height includes the internal leading: the em is the cell over ascent plus descent.
+    let em = if t.cell { size / (whole.ascent + whole.descent).max(0.1) } else { size };
+    let (path, advance) = match &t.advances {
+        // The file's advances place each character where it was laid out, whatever font draws it.
+        Some(adv) if adv.len() == t.text.chars().count() => {
+            let mut p = BezPath::new();
+            let mut x = 0.0;
+            for (c, a) in t.text.chars().zip(adv) {
+                let g = outline(&t.family, t.bold, t.italic, c.encode_utf8(&mut [0; 4]))?;
+                p.extend((Affine::translate((x, 0.0)) * Affine::scale(em) * g.path).elements().iter().copied());
+                x += f64::from(*a);
+            }
+            (p, x)
+        }
+        _ => (Affine::scale(em) * whole.path, whole.advance * em),
+    };
+    let dx = match t.align & canvas::TA_HORIZONTAL {
+        6 => -advance / 2.0,
+        2 => -advance,
+        _ => 0.0,
+    };
+    let dy = match t.align & canvas::TA_VERTICAL {
+        24 => 0.0,
+        8 => -whole.descent * em,
+        _ => whole.ascent * em,
+    };
+    let tf = Affine::translate((f64::from(t.x), f64::from(t.y))) * Affine::rotate(-f64::from(t.angle)) * Affine::translate((dx, dy));
+    let segs = segs_of(&(tf * path));
+    Some(Item::Path { segs, fill: Some(t.color), stroke: None, even_odd: false })
+}
+
+/// A kurbo path as segments; quadratic curves (TrueType outlines) become the equivalent cubics.
+fn segs_of(path: &BezPath) -> Vec<Seg> {
+    let pt = |p: kurbo::Point| Some((f(p.x)?, f(p.y)?));
+    let mut out = Vec::new();
+    let (mut start, mut cur) = (kurbo::Point::ZERO, kurbo::Point::ZERO);
+    for e in path.elements() {
+        let seg = match *e {
+            kurbo::PathEl::MoveTo(a) => {
+                (start, cur) = (a, a);
+                pt(a).map(|(x, y)| Seg::Move(x, y))
+            }
+            kurbo::PathEl::LineTo(a) => {
+                cur = a;
+                pt(a).map(|(x, y)| Seg::Line(x, y))
+            }
+            kurbo::PathEl::QuadTo(q, b) => {
+                let (c1, c2) = (cur + (q - cur) * (2.0 / 3.0), b + (q - b) * (2.0 / 3.0));
+                cur = b;
+                pt(c1).zip(pt(c2)).zip(pt(b)).map(|(((x1, y1), (x2, y2)), (x3, y3))| Seg::Cubic(x1, y1, x2, y2, x3, y3))
+            }
+            kurbo::PathEl::CurveTo(a, c, b) => {
+                cur = b;
+                pt(a).zip(pt(c)).zip(pt(b)).map(|(((x1, y1), (x2, y2)), (x3, y3))| Seg::Cubic(x1, y1, x2, y2, x3, y3))
+            }
+            kurbo::PathEl::ClosePath => {
+                cur = start;
+                Some(Seg::Close)
+            }
+        };
+        out.extend(seg);
+    }
+    out
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -137,6 +251,26 @@ fn build(raw: Vec<Raw>, frame: Option<Frame>) -> Picture {
             let rect = [f(x)?, f(y)?, f(r[2] * sx)?, f(r[3] * sy)?];
             Some(Item::Bitmap { rect, width: img.w as u32, height: img.h as u32, rgba: img.px })
         }
+        Raw::Text { at, size, cell, angle, color, font, align, text, dx } => {
+            let (x, y) = tf(at);
+            // Text stays upright whatever the y direction of the mapping; sizes and advances scale.
+            let k = (sx.abs() + sy.abs()) / 2.0;
+            let advances = dx.and_then(|d| d.iter().map(|v| f(v * sx.signum() * k)).collect::<Option<Vec<_>>>());
+            Some(Item::Text(TextItem {
+                x: f(x)?,
+                y: f(y)?,
+                size: f(size * k)?,
+                cell,
+                angle: f(angle)?,
+                color,
+                family: font.family,
+                bold: font.bold,
+                italic: font.italic,
+                align,
+                text,
+                advances,
+            }))
+        }
     });
     let items = items.collect();
     Picture { width: f(size.0).unwrap_or(0.0), height: f(size.1).unwrap_or(0.0), items }
@@ -201,6 +335,7 @@ fn bbox(raw: &[Raw]) -> Option<[f64; 4]> {
                 grow((rect[0], rect[1]));
                 grow((rect[0] + rect[2], rect[1] + rect[3]));
             }
+            Raw::Text { at, .. } => grow(*at),
         }
     }
     b
