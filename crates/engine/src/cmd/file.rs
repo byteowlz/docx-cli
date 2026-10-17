@@ -96,6 +96,9 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("file.exportPng", "Export Page as PNG", "File › Export", export_png)
             .params(r#"{"path": string, "page"?: n (1-based), "scale"?: px per pt, "markup"?: bool (the page with its comments in balloons beside it; default file.printMarkup)}"#)
             .pure(),
+        CommandSpec::new("file.pageGeometry", "Page Geometry", "File › Export", page_geometry)
+            .params(r#"{} → printed page sizes and the page rectangles of each content control and paragraph"#)
+            .pure(),
         // A print setting, like Word's: not part of the document, so no undo step.
         CommandSpec::new("file.printMarkup", "Print Markup", "File › Print", |s, v| {
             s.prefs.print_markup = p::bool(v, "value").unwrap_or(!s.prefs.print_markup);
@@ -356,6 +359,38 @@ fn export_png(s: &mut Session, v: &Value) -> CmdResult {
     let png = img.to_png();
     crate::io::write_file(path, &png).map_err(CmdError::Failed)?;
     Ok(json!({"path": path, "width": img.width, "height": img.height, "bytes": png.len()}))
+}
+
+fn rects_json(l: &wordcraft_layout::DocLayout, doc: &Document, a: &wordcraft_doc::Pos, b: &wordcraft_doc::Pos) -> Vec<Value> {
+    l.selection_rects(doc, a, b, 0).into_iter().map(|(page, r)| json!({"page": page + 1, "x": r.x, "y": r.y, "w": r.w, "h": r.h})).collect()
+}
+
+/// The printed layout's page sizes and the page rectangles (points, origin top left) of each
+/// content control's content and each paragraph. It is the layout `file.exportPdf` prints, so a
+/// host can place controls over that PDF's pages.
+fn page_geometry(s: &mut Session, _: &Value) -> CmdResult {
+    let l = s.export_layout_with(false);
+    let pages: Vec<Value> =
+        l.pages.iter().enumerate().map(|(i, pg)| json!({"page": i + 1, "number": pg.number, "w": pg.w - pg.markup, "h": pg.h})).collect();
+    let stories: Vec<StoryRef> = std::iter::once(StoryRef::Body).chain(s.doc.parts.keys().map(|id| StoryRef::Part(*id))).collect();
+    let mut controls = Vec::new();
+    for story in &stories {
+        for r in s.doc.control_ranges(*story) {
+            controls.push(
+                json!({"tag": r.control.tag, "story": story, "path": r.start.path, "rects": rects_json(&l, &s.doc, &r.content_start(), &r.end)}),
+            );
+        }
+    }
+    let mut keys: Vec<_> = l.index.keys().cloned().collect();
+    keys.sort();
+    let mut paragraphs = Vec::with_capacity(keys.len());
+    for (story, path) in keys {
+        let a = wordcraft_doc::Pos::new(story, path.clone(), 0);
+        let Some(p) = s.doc.para_at(&a) else { continue };
+        let b = wordcraft_doc::Pos::new(story, path.clone(), p.text.len());
+        paragraphs.push(json!({"story": story, "path": path, "rects": rects_json(&l, &s.doc, &a, &b)}));
+    }
+    Ok(json!({"pages": pages, "controls": controls, "paragraphs": paragraphs}))
 }
 
 fn properties(s: &mut Session, v: &Value) -> CmdResult {

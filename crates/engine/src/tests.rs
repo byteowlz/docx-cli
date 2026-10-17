@@ -8082,4 +8082,27 @@ fn toc_collects_cell_headings() {
         assert_eq!(targets["headings"].as_array().unwrap().len(), 0);
         assert!(s.doc.para(StoryRef::Body, &Path::top(1)).is_some());
     }
+#[test]
+fn page_geometry_places_controls_and_paragraphs_on_the_printed_page() {
+    let mut s = s();
+    run(&mut s, "text.insert", json!({"text": "Mandant: Mara Winter"}));
+    run(&mut s, "text.newParagraph", json!({}));
+    run(&mut s, "text.insert", json!({"text": "Fester Text"}));
+    let (a, b) = (Pos::body(0, "Mandant: ".len()), Pos::body(0, "Mandant: Mara Winter".len()));
+    run(&mut s, "select.range", json!({"anchor": a, "focus": b}));
+    run(&mut s, "developer.plainText", json!({"tag": "client.name"}));
+    let g = run(&mut s, "file.pageGeometry", json!({}));
+    let page = &g["pages"][0];
+    assert_eq!((g["pages"].as_array().map(Vec::len), page["page"].as_u64()), (Some(1), Some(1)));
+    let control = &g["controls"][0];
+    assert_eq!((control["tag"].as_str(), control["story"].as_str()), (Some("client.name"), Some("body")));
+    let rect = &control["rects"][0];
+    let (x, w, label) = (rect["x"].as_f64().unwrap_or(0.0), rect["w"].as_f64().unwrap_or(0.0), &g["paragraphs"][0]["rects"][0]);
+    // The control covers the name only: right of the label, inside its paragraph's line.
+    assert!(
+        x > label["x"].as_f64().unwrap_or(0.0) && w > 0.0 && x + w <= label["x"].as_f64().unwrap_or(0.0) + label["w"].as_f64().unwrap_or(0.0) + 0.5
+    );
+    assert_eq!((rect["page"].as_u64(), rect["y"].as_f64()), (Some(1), label["y"].as_f64()));
+    assert_eq!(g["paragraphs"].as_array().map(Vec::len), Some(2));
+    assert!(g["paragraphs"][1]["rects"][0]["y"].as_f64() > label["y"].as_f64());
 }

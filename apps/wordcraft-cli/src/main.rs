@@ -27,6 +27,8 @@ USAGE:
   wordcraft-cli text <file>                   plain text
   wordcraft-cli inspect <file>                document structure (JSON)
   wordcraft-cli render <file> <out.png> [--page N] [--scale S]
+  wordcraft-cli geometry <file>               printed page sizes and the page rectangles of content
+                                              controls and paragraphs (JSON, points)
   wordcraft-cli run [--file F | --template T] --cmd 'id={json}' [--cmd …] [--save OUT] [--print]
                     [--author NAME]           run commands headlessly, then save (--author names
                                               who tracked changes and comments are by)
@@ -355,6 +357,12 @@ fn run<S: AsRef<OsStr>>(args: &[S]) -> Result<(), Failure> {
             let mut s = open(&pos(0)?)?;
             let tree = serde_json::to_string_pretty(&s.run("document.inspect", &json!({})).map_err(|e| e.to_string())?).unwrap_or_default();
             write_stdout(|o| writeln!(o, "{tree}"))
+        }
+        "geometry" => {
+            validate_options("geometry", &rest, &[])?;
+            let mut s = open(&pos(0)?)?;
+            let r = s.run("file.pageGeometry", &json!({})).map_err(|e| e.to_string())?;
+            write_stdout(|o| writeln!(o, "{r}"))
         }
         "render" => {
             validate_options("render", &rest, RENDER_OPTIONS)?;
