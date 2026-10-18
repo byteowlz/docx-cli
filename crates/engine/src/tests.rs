@@ -8082,6 +8082,8 @@ fn toc_collects_cell_headings() {
         assert_eq!(targets["headings"].as_array().unwrap().len(), 0);
         assert!(s.doc.para(StoryRef::Body, &Path::top(1)).is_some());
     }
+}
+
 #[test]
 fn page_geometry_places_controls_and_paragraphs_on_the_printed_page() {
     let mut s = s();
