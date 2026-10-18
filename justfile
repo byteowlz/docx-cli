@@ -3,19 +3,19 @@ default:
     @just --list
 
 build:
-    cargo build -p wordcraft-cli
+    cargo build -p docx-cli
 
 check:
-    cargo check -p wordcraft-cli
+    cargo check -p docx-cli
 
 # Scoped regressions for the local core changes.
 test:
-    cargo test -p wordcraft-doc native_json
-    cargo test -p wordcraft-fonts runtime_font
-    cargo test -p wordcraft-layout frames
+    cargo test -p docx-cli-doc native_json
+    cargo test -p docx-cli-fonts runtime_font
+    cargo test -p docx-cli-layout frames
 
 mcp *args:
-    target/debug/wordcraft-cli mcp {{args}}
+    target/debug/docx-cli mcp {{args}}
 
 convert input output:
-    target/debug/wordcraft-cli convert "{{input}}" "{{output}}"
+    target/debug/docx-cli convert "{{input}}" "{{output}}"

@@ -9,9 +9,9 @@
 //! such cells, as in Word (`table::extend_selection`).
 
 use serde_json::{Value, json};
-use wordcraft_doc::edit::Fragment;
-use wordcraft_doc::props::CharProps;
-use wordcraft_doc::{Block, Paragraph, Pos};
+use docx_cli_doc::edit::Fragment;
+use docx_cli_doc::props::CharProps;
+use docx_cli_doc::{Block, Paragraph, Pos};
 
 use super::{parse_pos, pos_json};
 use crate::{CmdError, CmdResult, ColumnBlock, CommandSpec, Selection, Session, p};

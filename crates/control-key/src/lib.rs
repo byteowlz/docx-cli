@@ -4,22 +4,22 @@
 use std::path::{Path, PathBuf};
 
 /// The app's settings folder (preferences, logs, key files): macOS
-/// `~/Library/Application Support/WordCraft`, Windows `%APPDATA%\WordCraft`, otherwise
-/// `$XDG_CONFIG_HOME/wordcraft` or `~/.config/wordcraft`.
-/// `WORDCRAFT_PROFILE_DIR` overrides the entire folder for isolated runs.
+/// `~/Library/Application Support/docx-cli`, Windows `%APPDATA%\docx-cli`, otherwise
+/// `$XDG_CONFIG_HOME/docx-cli` or `~/.config/docx-cli`.
+/// `DOCX_CLI_PROFILE_DIR` overrides the entire folder for isolated runs.
 pub fn settings_dir() -> Option<PathBuf> {
-    if let Some(path) = std::env::var_os("WORDCRAFT_PROFILE_DIR").filter(|p| !p.is_empty()) {
+    if let Some(path) = std::env::var_os("DOCX_CLI_PROFILE_DIR").filter(|p| !p.is_empty()) {
         return Some(PathBuf::from(path));
     }
     if cfg!(target_os = "macos") {
-        std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Library/Application Support/WordCraft"))
+        std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Library/Application Support/docx-cli"))
     } else if cfg!(windows) {
-        std::env::var_os("APPDATA").map(|a| PathBuf::from(a).join("WordCraft"))
+        std::env::var_os("APPDATA").map(|a| PathBuf::from(a).join("docx-cli"))
     } else {
         std::env::var_os("XDG_CONFIG_HOME")
             .map(PathBuf::from)
             .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
-            .map(|c| c.join("wordcraft"))
+            .map(|c| c.join("docx-cli"))
     }
 }
 
@@ -63,12 +63,12 @@ mod tests {
         assert_eq!(parse_instance_id("instance-id=a b\n"), None);
         assert_eq!(parse_instance_id("instance-id=..\n"), None);
         assert_eq!(parse_instance_id("instance-id=\n"), None);
-        assert_eq!(parse_instance_id("app=ai.storyteller.wordcraft\n"), None);
+        assert_eq!(parse_instance_id("app=ai.storyteller.docx-cli\n"), None);
     }
 
     #[test]
     fn key_file_per_instance() {
-        let dir = Path::new("/settings/wordcraft");
+        let dir = Path::new("/settings/docx-cli");
         assert_eq!(key_path_for(dir, Some("1234"), 7981), dir.join("control-key.1234"));
         assert_eq!(key_path_for(dir, None, 7981), dir.join("control-key.local-7981"));
         assert_eq!(key_path_for(dir, None, 7982), dir.join("control-key.local-7982"));
@@ -81,7 +81,7 @@ mod tests {
     fn settings_dir_is_the_apps_folder() {
         if let Some(d) = settings_dir() {
             let name = d.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            assert!(name == "wordcraft" || name == "WordCraft", "{}", d.display());
+            assert!(name == "docx-cli" || name == "docx-cli", "{}", d.display());
         }
     }
 }

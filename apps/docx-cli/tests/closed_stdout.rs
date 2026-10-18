@@ -1,4 +1,4 @@
-//! A reader that closes stdout early (`wordcraft-cli commands --json | head`) must end the CLI
+//! A reader that closes stdout early (`docx-cli commands --json | head`) must end the CLI
 //! quietly with exit 0, never with a panic (#508).
 #![cfg(unix)]
 
@@ -6,7 +6,7 @@ use std::io::{Read, Write};
 use std::process::{Command, Stdio};
 
 fn cli() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_wordcraft-cli"))
+    Command::new(env!("CARGO_BIN_EXE_docx-cli"))
 }
 
 #[test]

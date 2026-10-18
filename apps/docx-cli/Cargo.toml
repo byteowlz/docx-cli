@@ -1,0 +1,23 @@
+[package]
+name = "docx-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "docx-cli command line: convert, inspect, render, run commands, MCP server"
+
+[[bin]]
+name = "docx-cli"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+docx-cli-doc = { workspace = true }
+docx-cli-engine = { workspace = true }
+docx-cli-render = { workspace = true }
+docx-cli-mcp = { workspace = true }
+docx-cli-zotero = { workspace = true }
+serde_json = { workspace = true }
+sys-locale = "0.3"

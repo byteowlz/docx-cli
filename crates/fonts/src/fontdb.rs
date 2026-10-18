@@ -735,7 +735,7 @@ fn mini_font(tables: &[([u8; 4], Vec<u8>)]) -> Vec<u8> {
 }
 
 /// The platform's font folders (the system's and the user's), plus runtime
-/// `WORDCRAFT_FONT_DIR` directories (a platform path list), scanned by [`FontDb::global`].
+/// `DOCX_CLI_FONT_DIR` directories (a platform path list), scanned by [`FontDb::global`].
 /// Empty on wasm.
 pub fn system_font_dirs() -> Vec<std::path::PathBuf> {
     let mut dirs: Vec<std::path::PathBuf> = Vec::new();
@@ -771,7 +771,7 @@ pub fn system_font_dirs() -> Vec<std::path::PathBuf> {
             dirs.push(h.join(".local/share/fonts"));
         }
     }
-    dirs.extend(extra_font_dirs(std::env::var_os("WORDCRAFT_FONT_DIR").as_deref()));
+    dirs.extend(extra_font_dirs(std::env::var_os("DOCX_CLI_FONT_DIR").as_deref()));
     dirs
 }
 
@@ -1793,10 +1793,10 @@ mod tests_sysfonts;
 #[cfg(test)]
 mod tests {
     #[test]
-    #[ignore = "requires a locally licensed kaiu.ttf; set WORDCRAFT_TEST_KAI_FONT"]
+    #[ignore = "requires a locally licensed kaiu.ttf; set DOCX_CLI_TEST_KAI_FONT"]
     fn kai_contours_include_complete_character_body() {
         use kurbo::Shape;
-        let path = std::env::var_os("WORDCRAFT_TEST_KAI_FONT").expect("set WORDCRAFT_TEST_KAI_FONT");
+        let path = std::env::var_os("DOCX_CLI_TEST_KAI_FONT").expect("set DOCX_CLI_TEST_KAI_FONT");
         let db = super::FontDb::with_font_dirs(vec![]);
         db.set_system_fallback(false);
         assert!(db.add_font(std::fs::read(path).unwrap()) > 0);

@@ -6,17 +6,17 @@ dependencies. No graphical frontend is built by default. Run `just mcp` to serve
 MCP over stdio; pass explicit read/write roots as documented in [mcp.md](mcp.md).
 The optional tmpltr adapter and fused-template demo consume the same engine.
 
-WordCraft's `.json` / `.wcraft.json` format is the native `Document` object, not a
+docx-cli's `.json` / `.wcraft.json` format is the native `Document` object, not a
 versioned envelope. Use the CLI without launching the desktop app:
 
 ```bash
-wordcraft-cli convert scaffold.docx scaffold.wcraft.json
-wordcraft-cli convert scaffold.wcraft.json output.docx
-wordcraft-cli convert output.docx reopened.wcraft.json
+docx-cli convert scaffold.docx scaffold.wcraft.json
+docx-cli convert scaffold.wcraft.json output.docx
+docx-cli convert output.docx reopened.wcraft.json
 ```
 
 This is also an interchange path for optional tools such as tmpltr that import
-or export DOCX; it does not require a tmpltr dependency in WordCraft.
+or export DOCX; it does not require a tmpltr dependency in docx-cli.
 
 ## Embedded payloads
 
@@ -39,7 +39,7 @@ examples and never publish private source payloads.
 
 Native JSON read/write preserves these maps byte-for-byte. Synthetic doc tests
 cover full `Document` equality, missing/empty maps, deterministic output and
-invalid bytes: `cargo test -p wordcraft-doc native_json`. An external engine probe
+invalid bytes: `cargo test -p docx-cli-doc native_json`. An external engine probe
 also verified two JSON → DOCX → JSON cycles with an original PNG logo and
 synthetic custom XML, preserving image references, alt text and payload bytes.
 
@@ -52,13 +52,13 @@ stories; it does not apply the DOCX package reader's decompression limits.
 
 ## Runtime font directories
 
-Set `WORDCRAFT_FONT_DIR` before launching a native CLI/app to scan extra font
+Set `DOCX_CLI_FONT_DIR` before launching a native CLI/app to scan extra font
 folders recursively alongside normal system/user fonts, without installing fonts
 or changing `HOME`. It accepts a platform path list: `:` on macOS/Linux, `;` on
 Windows. Empty entries are ignored. Paths are literal (no `~` expansion).
 
 ```bash
-WORDCRAFT_FONT_DIR="$PWD/demo/fonts:$PWD/extra-fonts" wordcraft-cli convert scaffold.wcraft.json output.pdf
+DOCX_CLI_FONT_DIR="$PWD/demo/fonts:$PWD/extra-fonts" docx-cli convert scaffold.wcraft.json output.pdf
 ```
 
 The setting is read when the process-wide font database is first initialized;

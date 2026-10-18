@@ -1,7 +1,7 @@
 //! Synthetic body frame fixtures only; no documents or text from private samples.
 use super::*;
-use wordcraft_doc::props::{LineSpacing, ParaProps, TextFrame};
-use wordcraft_doc::{Path, Pos};
+use docx_cli_doc::props::{LineSpacing, ParaProps, TextFrame};
+use docx_cli_doc::{Path, Pos};
 
 fn document(text: &str) -> Document {
     let mut d = Document::from_text(text);
@@ -245,7 +245,7 @@ fn body_frame_auto_width_uses_widest_group_member_and_alignment_has_no_padding()
         let expected_w = natural_width(&Arc::new(pl.clone()));
         for block in 0..2 {
             set_frame(&mut d, block, &fr);
-            d.para_mut(StoryRef::Body, &Path::top(block)).unwrap().props.align = Some(wordcraft_doc::props::Align::Center);
+            d.para_mut(StoryRef::Body, &Path::top(block)).unwrap().props.align = Some(docx_cli_doc::props::Align::Center);
         }
         let l = lay(&d);
         let x = 72.0 + d.last_section.text_width() - expected_w;
@@ -329,7 +329,7 @@ fn body_frame_reflow_views_and_explicit_inline_alignment_keep_reading_order() {
 
 #[test]
 fn body_frame_spacing_is_local_and_inherited_frames_group() {
-    use wordcraft_doc::styles::{Style, StyleKind};
+    use docx_cli_doc::styles::{Style, StyleKind};
     let mut d = document("Before\nFirst\nSecond\nAfter");
     let fr =
         TextFrame { w: Some(100.0), x: 300.0, y: 200.0, h_anchor: "page".into(), v_anchor: "page".into(), wrap: "none".into(), ..Default::default() };

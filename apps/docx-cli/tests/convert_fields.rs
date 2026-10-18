@@ -1,7 +1,7 @@
 //! Explicit field refresh for headless conversions; ordinary conversion keeps cached results.
 use std::process::Command;
-use wordcraft_doc::para::InlineObject;
-use wordcraft_doc::{Document, Path, Pos, StoryRef};
+use docx_cli_doc::para::InlineObject;
+use docx_cli_doc::{Document, Path, Pos, StoryRef};
 
 #[test]
 fn convert_refresh_is_opt_in() {
@@ -21,11 +21,11 @@ fn convert_refresh_is_opt_in() {
     let input = dir.join("in.json");
     std::fs::write(&input, serde_json::to_vec(&doc).unwrap()).unwrap();
     let docx = dir.join("in.docx");
-    let make = Command::new(env!("CARGO_BIN_EXE_wordcraft-cli")).arg("convert").arg(&input).arg(&docx).output().unwrap();
+    let make = Command::new(env!("CARGO_BIN_EXE_docx-cli")).arg("convert").arg(&input).arg(&docx).output().unwrap();
     assert!(make.status.success(), "{}", String::from_utf8_lossy(&make.stderr));
     for refresh in [false, true] {
         let output = dir.join(if refresh { "refreshed.json" } else { "cached.json" });
-        let mut cmd = Command::new(env!("CARGO_BIN_EXE_wordcraft-cli"));
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_docx-cli"));
         cmd.arg("convert").arg(&docx).arg(&output);
         if refresh {
             cmd.arg("--update-fields");

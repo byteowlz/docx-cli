@@ -1,7 +1,7 @@
 //! Floating body paragraph frames (`w:framePr`). Consecutive paragraphs with identical
 //! resolved frame properties are one box, not independent overlapping floats.
 use super::*;
-use wordcraft_doc::props::TextFrame;
+use docx_cli_doc::props::TextFrame;
 
 /// Handle a framed body paragraph, including already placed members of a group. Reflow views
 /// keep the ordinary reading order. A section boundary always ends a frame group.
@@ -84,7 +84,7 @@ fn anchor_breaks_page(doc: &Document, end: usize) -> bool {
 }
 
 /// Collapse paragraph spacing inside the frame independently of the surrounding body flow.
-fn spacing_before(rp: &wordcraft_doc::resolve::ResolvedPara, listed: bool, prev: Option<(String, bool, f32, bool, bool)>, y: &mut f32) -> f32 {
+fn spacing_before(rp: &docx_cli_doc::resolve::ResolvedPara, listed: bool, prev: Option<(String, bool, f32, bool, bool)>, y: &mut f32) -> f32 {
     let mut before = rp.space_before;
     let Some((style, contextual, mut after, auto, prev_listed)) = prev else {
         return if rp.before_auto { 0.0 } else { before };

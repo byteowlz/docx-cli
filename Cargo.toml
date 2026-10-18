@@ -1,33 +1,32 @@
 [workspace]
 resolver = "3"
 members = ["crates/*", "apps/*", "xtask"]
-default-members = ["apps/wordcraft-cli"]
+default-members = ["apps/docx-cli"]
 
 [workspace.package]
 version = "0.8.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 rust-version = "1.95"
-repository = "https://github.com/storytold/wordcraft"
+repository = "https://github.com/byteowlz/docx-cli"
 
 [workspace.dependencies]
 # internal
-wordcraft-geom = { path = "crates/geom" }
-wordcraft-doc = { path = "crates/doc" }
-wordcraft-fonts = { path = "crates/fonts" }
-wordcraft-layout = { path = "crates/layout" }
-wordcraft-docx = { path = "crates/docx" }
-wordcraft-docbin = { path = "crates/docbin" }
-wordcraft-formats = { path = "crates/formats" }
-wordcraft-render = { path = "crates/render" }
-wordcraft-pdf = { path = "crates/pdf" }
-wordcraft-proof = { path = "crates/proof" }
-wordcraft-engine = { path = "crates/engine" }
-wordcraft-mcp = { path = "crates/mcp" }
-wordcraft-zotero = { path = "crates/zotero" }
-wordcraft-control-key = { path = "crates/control-key" }
-wordcraft-ui-egui = { path = "crates/ui-egui" }
-wordcraft-metafile = { path = "crates/metafile" }
+docx-cli-geom = { path = "crates/geom" }
+docx-cli-doc = { path = "crates/doc" }
+docx-cli-fonts = { path = "crates/fonts" }
+docx-cli-layout = { path = "crates/layout" }
+docx-cli-docx = { path = "crates/docx" }
+docx-cli-docbin = { path = "crates/docbin" }
+docx-cli-formats = { path = "crates/formats" }
+docx-cli-render = { path = "crates/render" }
+docx-cli-pdf = { path = "crates/pdf" }
+docx-cli-proof = { path = "crates/proof" }
+docx-cli-engine = { path = "crates/engine" }
+docx-cli-mcp = { path = "crates/mcp" }
+docx-cli-zotero = { path = "crates/zotero" }
+docx-cli-control-key = { path = "crates/control-key" }
+docx-cli-metafile = { path = "crates/metafile" }
 
 # foundation
 kurbo = { version = "0.13", features = ["serde"] }

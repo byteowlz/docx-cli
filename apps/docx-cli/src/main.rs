@@ -1,4 +1,4 @@
-//! `wordcraft-cli`: WordCraft from the command line.
+//! `docx-cli`: docx-cli from the command line.
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 mod automation_args;
@@ -10,32 +10,32 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use serde_json::{Value, json};
-use wordcraft_engine::Session;
+use docx_cli_engine::Session;
 
 const USAGE: &str = "\
-wordcraft-cli — WordCraft from the command line
+docx-cli — docx-cli from the command line
 
 USAGE:
-  wordcraft-cli convert <in> <out> [--markup] [--update-fields] [--format wordml2003|flatopc]
+  docx-cli convert <in> <out> [--markup] [--update-fields] [--format wordml2003|flatopc]
                                               convert between formats (docx, doc [read], pdf, odt, rtf, html, md, tex, txt, json, png,
                                               xml); --update-fields refreshes unlocked fields before saving;
                                               an .xml file is a Word XML Document (Flat OPC), or with
                                               --format wordml2003 a Word 2003 XML Document;
                                               --markup (Print Markup): comments beside each page and
                                               tracked changes in pdf/png, a comment list in html/md/txt
-  wordcraft-cli info <file>                   pages, words, paragraphs, properties (JSON)
-  wordcraft-cli text <file>                   plain text
-  wordcraft-cli inspect <file>                document structure (JSON)
-  wordcraft-cli render <file> <out.png> [--page N] [--scale S]
-  wordcraft-cli geometry <file> [--markup]    printed page sizes and the page rectangles of content
+  docx-cli info <file>                   pages, words, paragraphs, properties (JSON)
+  docx-cli text <file>                   plain text
+  docx-cli inspect <file>                document structure (JSON)
+  docx-cli render <file> <out.png> [--page N] [--scale S]
+  docx-cli geometry <file> [--markup]    printed page sizes and the page rectangles of content
                                               controls, paragraphs and tracked changes (JSON, points),
                                               for the PDF `convert` writes with the same --markup
-  wordcraft-cli run [--file F | --template T] --cmd 'id={json}' [--cmd …] [--save OUT] [--print]
+  docx-cli run [--file F | --template T] --cmd 'id={json}' [--cmd …] [--save OUT] [--print]
                     [--author NAME]           run commands headlessly, then save (--author names
                                               who tracked changes and comments are by)
-  wordcraft-cli commands [--json]             list every command
-  wordcraft-cli parity [--markdown]           feature-catalog parity
-  wordcraft-cli mcp [--connect HOST:PORT | --author NAME] [--automation-read-root DIR] [--automation-write-root DIR]
+  docx-cli commands [--json]             list every command
+  docx-cli parity [--markdown]           feature-catalog parity
+  docx-cli mcp [--connect HOST:PORT | --author NAME] [--automation-read-root DIR] [--automation-write-root DIR]
                                               MCP server on stdio (headless, or bridged to the app).
                                               --automation-read-root / --automation-write-root confine
                                               the files the agent's commands read (open, insert text
@@ -43,17 +43,17 @@ USAGE:
                                               export, merge output…) to DIR, links followed; a root left
                                               out grants none of its access. They apply to the headless
                                               server and are an error with --connect.
-  wordcraft-cli zotero <command> <file> [--cmd 'id={json}' …] [--save OUT] [--trace] [--port P]
+  docx-cli zotero <command> <file> [--cmd 'id={json}' …] [--save OUT] [--trace] [--port P]
                                               run a Zotero command on a document (Zotero must be
                                               running): addEditCitation, addEditBibliography,
                                               addNote, refresh, removeCodes, setDocPrefs
                                               (--cmd runs first, e.g. --cmd caret.docEnd)
-  wordcraft-cli [<command>] -h | --help       this help
-  wordcraft-cli --version
+  docx-cli [<command>] -h | --help       this help
+  docx-cli --version
 
 Paper: documents created here, and HTML, Markdown and text files (which give no page size), use
 the system region's paper (A4, or Letter in the US and other Letter regions), read from
-LC_ALL / LC_PAPER / LANG or the platform. Set WORDCRAFT_REGION=en-US (or another tag) for the
+LC_ALL / LC_PAPER / LANG or the platform. Set DOCX_CLI_REGION=en-US (or another tag) for the
 same output on every machine.
 ";
 
@@ -68,7 +68,7 @@ fn open(path: &Path) -> Result<Session, String> {
     // A file that gives no page size (HTML, Markdown, plain text) opens on the system region's
     // paper, as in the app: A4 in Italy, Letter in the US (#1381).
     let region = system_region();
-    let (doc, _) = wordcraft_engine::io::open_path_in(path, None, &region)?;
+    let (doc, _) = docx_cli_engine::io::open_path_in(path, None, &region)?;
     let mut s = session(doc);
     s.path = Some(path.into());
     Ok(s)
@@ -103,20 +103,20 @@ fn text_args<S: AsRef<OsStr>>(raw: &[S]) -> Result<(Vec<String>, Option<PathBuf>
 
 /// A headless session in the system region: every way the CLI starts one gives `file.new` the
 /// same paper (#1381).
-fn session(doc: wordcraft_doc::Document) -> Session {
+fn session(doc: docx_cli_doc::Document) -> Session {
     let mut s = Session::new(doc);
     s.system_region = system_region();
     s
 }
 
 /// The system region, read as the app reads it (locale variables, else the platform's locale).
-fn system_region() -> wordcraft_engine::Region {
-    wordcraft_engine::Region::from_locale_vars(|name| std::env::var(name).ok(), sys_locale::get_locale)
+fn system_region() -> docx_cli_engine::Region {
+    docx_cli_engine::Region::from_locale_vars(|name| std::env::var(name).ok(), sys_locale::get_locale)
 }
 
 /// The body text for `text`: the plain-text export, so list items keep their bullet or number label.
-fn listed_text(doc: &wordcraft_doc::Document) -> Result<String, String> {
-    let bytes = wordcraft_engine::io::save_bytes("out.txt", doc)?;
+fn listed_text(doc: &docx_cli_doc::Document) -> Result<String, String> {
+    let bytes = docx_cli_engine::io::save_bytes("out.txt", doc)?;
     Ok(String::from_utf8_lossy(&bytes).replace("\r\n", "\n"))
 }
 
@@ -212,7 +212,7 @@ fn validate_options(command: &str, args: &[String], specs: &[OptionSpec]) -> Res
 fn automation_roots(
     command: &str,
     args: &[String],
-) -> Result<(Option<std::sync::Arc<wordcraft_engine::file_access::AutomationRoots>>, Vec<String>), String> {
+) -> Result<(Option<std::sync::Arc<docx_cli_engine::file_access::AutomationRoots>>, Vec<String>), String> {
     let mut found = automation_args::AutomationArgs::new(None, None);
     let mut left = Vec::new();
     let mut it = args.iter().cloned();
@@ -221,7 +221,7 @@ fn automation_roots(
             left.push(arg);
         }
     }
-    let roots = wordcraft_engine::file_access::AutomationRoots::new(found.read_root.as_deref(), found.write_root.as_deref())
+    let roots = docx_cli_engine::file_access::AutomationRoots::new(found.read_root.as_deref(), found.write_root.as_deref())
         .map_err(|e| format!("{command}: {e}"))?;
     Ok((roots, left))
 }
@@ -258,7 +258,7 @@ const ZOTERO_OPTIONS: &[OptionSpec] = &[
 enum Failure {
     /// A real error, reported on stderr with a failing exit status.
     Error(String),
-    /// Whoever read stdout closed it (`wordcraft-cli commands --json | head`): there is nobody left
+    /// Whoever read stdout closed it (`docx-cli commands --json | head`): there is nobody left
     /// to write to, so stop quietly and exit 0 like other command-line tools.
     StdoutClosed,
 }
@@ -381,11 +381,11 @@ fn run<S: AsRef<OsStr>>(args: &[S]) -> Result<(), Failure> {
             let mut s = match (arg_value(&rest, "--file"), arg_value(&rest, "--template")) {
                 (Some(f), _) => open(&f)?,
                 (None, Some(t)) => {
-                    let mut s = session(wordcraft_doc::Document::new());
+                    let mut s = session(docx_cli_doc::Document::new());
                     s.run("file.new", &json!({"template": t})).map_err(|e| e.to_string())?;
                     s
                 }
-                _ => session(wordcraft_doc::Document::new()),
+                _ => session(docx_cli_doc::Document::new()),
             };
             if let Some(name) = arg_value(&rest, "--author") {
                 set_author(&mut s, &name)?;
@@ -427,7 +427,7 @@ fn run<S: AsRef<OsStr>>(args: &[S]) -> Result<(), Failure> {
         }
         "commands" => {
             validate_options("commands", &rest, COMMANDS_OPTIONS)?;
-            let s = session(wordcraft_doc::Document::new());
+            let s = session(docx_cli_doc::Document::new());
             if rest.iter().any(|a| a == "--json") {
                 let list = serde_json::to_string_pretty(&s.registry.describe()).unwrap_or_default();
                 write_stdout(|o| writeln!(o, "{list}"))
@@ -442,8 +442,8 @@ fn run<S: AsRef<OsStr>>(args: &[S]) -> Result<(), Failure> {
         }
         "parity" => {
             validate_options("parity", &rest, PARITY_OPTIONS)?;
-            let s = session(wordcraft_doc::Document::new());
-            let p = wordcraft_engine::catalog::parity(&s.registry);
+            let s = session(docx_cli_doc::Document::new());
+            let p = docx_cli_engine::catalog::parity(&s.registry);
             if rest.iter().any(|a| a == "--markdown") {
                 write_stdout(|o| write!(o, "{}", parity_markdown(&p)))
             } else {
@@ -461,25 +461,25 @@ fn run<S: AsRef<OsStr>>(args: &[S]) -> Result<(), Failure> {
                         .into(),
                 );
             }
-            let backend: Box<dyn wordcraft_mcp::Backend> = match connect {
+            let backend: Box<dyn docx_cli_mcp::Backend> = match connect {
                 // The app's user name is the person's own setting; don't rewrite it from a flag.
                 Some(_) if author.is_some() => {
                     return Err("mcp: --author applies to the headless server; with --connect, run file.setAuthor".into());
                 }
                 Some(addr) => {
-                    let remote = wordcraft_mcp::Remote::connect(&addr).map_err(|e| format!("can't reach the WordCraft app at {addr}: {e}"))?;
+                    let remote = docx_cli_mcp::Remote::connect(&addr).map_err(|e| format!("can't reach the docx-cli app at {addr}: {e}"))?;
                     if let Some(w) = remote.key_warning() {
-                        eprintln!("wordcraft-cli: {w}");
+                        eprintln!("docx-cli: {w}");
                     }
                     Box::new(remote)
                 }
                 None => {
-                    let mut headless = wordcraft_mcp::Headless::default();
+                    let mut headless = docx_cli_mcp::Headless::default();
                     if let Some(roots) = roots {
                         // Every thread of this process, not only the server's: nothing reaches past the roots.
-                        wordcraft_engine::file_access::confine_process(roots.clone());
+                        docx_cli_engine::file_access::confine_process(roots.clone());
                         let show = |root: Option<&std::path::Path>| root.map_or_else(|| "none".to_string(), |r| r.display().to_string());
-                        eprintln!("wordcraft-cli: files confined: read root {}, write root {}", show(roots.read_root()), show(roots.write_root()));
+                        eprintln!("docx-cli: files confined: read root {}, write root {}", show(roots.read_root()), show(roots.write_root()));
                         headless = headless.with_automation_roots(Some(roots));
                     }
                     if let Some(name) = author {
@@ -488,7 +488,7 @@ fn run<S: AsRef<OsStr>>(args: &[S]) -> Result<(), Failure> {
                     Box::new(headless)
                 }
             };
-            let mut server = wordcraft_mcp::Server::new(backend);
+            let mut server = docx_cli_mcp::Server::new(backend);
             let stdin = std::io::stdin();
             // A client that closes our stdout has hung up: `serve` returns BrokenPipe and we end cleanly.
             Ok(server.serve(stdin.lock(), std::io::stdout())?)
@@ -496,7 +496,7 @@ fn run<S: AsRef<OsStr>>(args: &[S]) -> Result<(), Failure> {
         "zotero" => {
             validate_options("zotero", &rest, ZOTERO_OPTIONS)?;
             let name = pos(0)?;
-            let command = wordcraft_zotero::Command::from_name(&name).ok_or_else(|| format!("unknown Zotero command `{name}`\n\n{USAGE}"))?;
+            let command = docx_cli_zotero::Command::from_name(&name).ok_or_else(|| format!("unknown Zotero command `{name}`\n\n{USAGE}"))?;
             let file = pos(1)?;
             let mut s = open(&file)?;
             for spec in rest.iter().zip(rest.iter().skip(1)).filter(|(a, _)| *a == "--cmd").map(|(_, v)| v) {
@@ -506,18 +506,18 @@ fn run<S: AsRef<OsStr>>(args: &[S]) -> Result<(), Failure> {
                 };
                 s.run(&id, &params).map_err(|e| format!("{id}: {e}"))?;
             }
-            let mut opts = wordcraft_zotero::client::Options::default();
+            let mut opts = docx_cli_zotero::client::Options::default();
             if let Some(p) = arg_value(&rest, "--port") {
                 opts.addr.set_port(p.parse().map_err(|_| format!("bad port `{p}`"))?);
             }
             let trace = rest.iter().any(|a| a == "--trace");
-            let mut bridge = wordcraft_zotero::Bridge::new();
-            let mut host = wordcraft_zotero::Headless::default();
-            let out = wordcraft_zotero::client::run_command(&opts, command, &mut |call| {
+            let mut bridge = docx_cli_zotero::Bridge::new();
+            let mut host = docx_cli_zotero::Headless::default();
+            let out = docx_cli_zotero::client::run_command(&opts, command, &mut |call| {
                 let r = bridge.handle(&mut s, &mut host, call);
                 if trace {
                     eprintln!("← {} {}", call.method, clip(&Value::Array(call.args.clone()).to_string()));
-                    eprintln!("→ {}", clip(&String::from_utf8_lossy(&wordcraft_zotero::wire::encode_reply(&r))));
+                    eprintln!("→ {}", clip(&String::from_utf8_lossy(&docx_cli_zotero::wire::encode_reply(&r))));
                 }
                 r
             })
@@ -532,7 +532,7 @@ fn run<S: AsRef<OsStr>>(args: &[S]) -> Result<(), Failure> {
             }
             Ok(())
         }
-        "--version" | "-V" => write_stdout(|o| writeln!(o, "wordcraft-cli {}", env!("CARGO_PKG_VERSION"))),
+        "--version" | "-V" => write_stdout(|o| writeln!(o, "docx-cli {}", env!("CARGO_PKG_VERSION"))),
         "" | "help" | "--help" | "-h" => write_stdout(|o| write!(o, "{USAGE}")),
         other => Err(format!("unknown command `{other}`\n\n{USAGE}").into()),
     }
@@ -548,7 +548,7 @@ fn clip(s: &str) -> String {
 
 fn parity_markdown(p: &Value) -> String {
     let mut s = String::from(
-        "# WordCraft feature parity\n\nGenerated by `cargo xtask parity` (`wordcraft-cli parity --markdown`): the word-processor feature catalog (`crates/engine/src/catalog.rs`) compared with the live command registry.\n\n",
+        "# docx-cli feature parity\n\nGenerated by `cargo xtask parity` (`docx-cli parity --markdown`): the word-processor feature catalog (`crates/engine/src/catalog.rs`) compared with the live command registry.\n\n",
     );
     s += &format!(
         "**{} of {} catalog features have commands ({}%).**\n\n| Tab | Live | Total |\n|---|---|---|\n",
@@ -577,7 +577,7 @@ fn main() -> ExitCode {
     match run(&args) {
         Ok(()) | Err(Failure::StdoutClosed) => ExitCode::SUCCESS,
         Err(Failure::Error(e)) => {
-            eprintln!("wordcraft-cli: {e}");
+            eprintln!("docx-cli: {e}");
             ExitCode::FAILURE
         }
     }
@@ -631,7 +631,7 @@ mod tests {
     fn usage_lists_exactly_the_subcommands() {
         let listed: Vec<&str> = USAGE
             .lines()
-            .filter_map(|line| line.strip_prefix("  wordcraft-cli ")?.split_whitespace().next())
+            .filter_map(|line| line.strip_prefix("  docx-cli ")?.split_whitespace().next())
             .filter(|word| !word.starts_with(['-', '[']))
             .collect();
         assert_eq!(listed, SUBCOMMANDS);
@@ -639,7 +639,7 @@ mod tests {
 
     #[test]
     fn text_keeps_bullet_and_number_labels() {
-        let doc = wordcraft_engine::io::open_bytes("lists.md", b"- alpha\n- beta\n\n1. first\n2. second\n").unwrap();
+        let doc = docx_cli_engine::io::open_bytes("lists.md", b"- alpha\n- beta\n\n1. first\n2. second\n").unwrap();
         assert_eq!(listed_text(&doc).unwrap(), "\u{2022}\talpha\n\u{2022}\tbeta\n1.\tfirst\n2.\tsecond");
     }
 
@@ -647,7 +647,7 @@ mod tests {
     fn author_flag_names_the_headless_session() {
         assert!(validate_options("run", &args(&["--author", "Claude (copyedit)", "--cmd", "edit.undo"]), RUN_OPTIONS).is_ok());
         assert!(validate_options("mcp", &args(&["--author", "Claude"]), MCP_OPTIONS).is_ok());
-        let mut s = Session::new(wordcraft_doc::Document::new());
+        let mut s = Session::new(docx_cli_doc::Document::new());
         assert!(set_author(&mut s, " Claude (copyedit) ").is_ok());
         assert_eq!(s.author, "Claude (copyedit)");
         assert!(set_author(&mut s, "   ").is_err_and(|e| e.starts_with("--author:")));
@@ -677,7 +677,7 @@ mod tests {
         let roots = roots.unwrap();
         assert!(roots.write_root().is_none());
         assert!(
-            roots.check(&format!("{write}/x.docx"), wordcraft_engine::file_access::Access::Write).unwrap_err().contains("write authority is absent")
+            roots.check(&format!("{write}/x.docx"), docx_cli_engine::file_access::Access::Write).unwrap_err().contains("write authority is absent")
         );
 
         // No flags: nothing is confined and the arguments pass through.
