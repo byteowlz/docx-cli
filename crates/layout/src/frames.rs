@@ -45,15 +45,9 @@ pub(super) fn place(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, block: u
         ctx.fields.page = pb.number;
     }
     let (mut items, w, h) = contents(ctx, block..end, &fr, pb.col_w());
-    let mut float = frame_float(&fr);
-    if pb.number.is_multiple_of(2) {
-        float.h_align = match float.h_align {
-            Some(FloatAlign::Inside) => Some(FloatAlign::End),
-            Some(FloatAlign::Outside) => Some(FloatAlign::Start),
-            other => other,
-        };
-    }
-    let r = float_rect(Some(PageFrame { sect: pb.sect, origin: (0.0, 0.0) }), (pb.col_x(), pb.col_w()), pb.y, w, h, &float);
+    // Inside and outside follow the page number, as for every other floating object.
+    let float = frame_float(&fr);
+    let r = float_rect(Some(page_frame(pb, ctx.mirror)), (pb.col_x(), pb.col_w()), pb.y, w, h, &float);
     for it in &mut items {
         it.translate(r.x, r.y);
     }
