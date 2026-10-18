@@ -1,4 +1,3 @@
-# Headless byteowlz build: retains CLI + MCP, does not build graphical apps.
 default:
     @just --list
 
@@ -19,3 +18,11 @@ mcp *args:
 
 convert input output:
     target/debug/docx-cli convert "{{input}}" "{{output}}"
+
+# Apply new upstream engine commits, renamed (see README)
+upstream-sync:
+    scripts/upstream-sync.sh
+
+# List new upstream engine commits without applying them
+upstream-check:
+    scripts/upstream-sync.sh --check

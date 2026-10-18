@@ -1,13 +1,11 @@
 # Headless native JSON exchange
 
-This local byteowlz fork retains upstream's workspace for mergeable fixes, but
-`cargo build` / `just build` defaults to the headless CLI and its core/MCP
-dependencies. No graphical frontend is built by default. Run `just mcp` to serve
-MCP over stdio; pass explicit read/write roots as documented in [mcp.md](mcp.md).
-The optional tmpltr adapter and fused-template demo consume the same engine.
+docx-cli is headless: `cargo build` / `just build` builds the CLI with its core
+and MCP crates. Run `just mcp` to serve MCP over stdio; pass explicit read/write
+roots as documented in [mcp.md](mcp.md). tmpltr's DOCX adapter uses the same engine.
 
 docx-cli's `.json` / `.wcraft.json` format is the native `Document` object, not a
-versioned envelope. Use the CLI without launching the desktop app:
+versioned envelope. Use the CLI:
 
 ```bash
 docx-cli convert scaffold.docx scaffold.wcraft.json

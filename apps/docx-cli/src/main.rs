@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 use docx_cli_engine::Session;
 
 const USAGE: &str = "\
-docx-cli — docx-cli from the command line
+docx-cli — read, convert, render and edit Word documents from the command line
 
 USAGE:
   docx-cli convert <in> <out> [--markup] [--update-fields] [--format wordml2003|flatopc]

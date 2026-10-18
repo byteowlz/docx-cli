@@ -35,8 +35,7 @@ docx-cli mcp --automation-read-root /work/project --automation-write-root /work/
   "args": ["mcp", "--automation-read-root", "/work/project", "--automation-write-root", "/work/project/out"]}}}
 ```
 
-The two flags (VectorCraft, PhotoCraft and the other Craft apps take the same ones, so one client
-config works across the suite) keep the agent to the folders you give it:
+The two flags keep the agent to the folders you give it:
 
 - Every file a command reads must lie inside the **read root**: `open_document` and `file.open`,
   `file.newFromTemplate`, `insert.textFromFile` and `insert.object`, `insert.picture` and

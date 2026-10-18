@@ -16,7 +16,9 @@ base=$(echo "$base" | tr -d '[:space:]')
 skip=(':(exclude)apps/wordcraft' ':(exclude)apps/wordcraft-web' ':(exclude)crates/ui-egui' ':(exclude)packaging'
       ':(exclude).github' ':(exclude)docs/brand' ':(exclude)assets/app-icon' ':(exclude)README.md' ':(exclude)AGENTS.md'
       ':(exclude)CLAUDE.md' ':(exclude)NOTICE' ':(exclude)ATTRIBUTION.md' ':(exclude)LICENSE-MIT' ':(exclude)LICENSE-APACHE'
-      ':(exclude)contributors' ':(exclude)Cargo.lock')
+      ':(exclude)contributors' ':(exclude)Cargo.lock' ':(exclude)ROADMAP.md' ':(exclude)docs/images' ':(exclude)docs/ui-parity.md'
+      ':(exclude)docs/releasing.md' ':(exclude)docs/target-app-parity.md' ':(exclude)docs/roadmap.md' ':(exclude)docs/contributors.md'
+      ':(exclude)docs/localization-*.md')
 commits=$(git rev-list --reverse --first-parent --no-merges "$base"..upstream/main)
 [ -n "$commits" ] || { echo "up to date with upstream ($base)"; exit 0; }
 echo "$(echo "$commits" | wc -l | tr -d ' ') new upstream commits since ${base:0:9}"
